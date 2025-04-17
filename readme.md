@@ -79,4 +79,4 @@ Contributions are welcome! Feel free to:
 
 ## 📜 License
 
-This project is licensed under the [Unlicense](https://unlicense.org/). See the [LICENSE](./LICENSE) file for more details.
+This project is licensed under the [Unlicense](https://unlicense.org/). See the [LICENSE](./license) file for more details.
