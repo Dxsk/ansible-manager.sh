@@ -56,6 +56,7 @@ ansible-manager [command] [playbook]
 | `ping` | Tests connectivity with all machines |
 | `status` | Shows vault status |
 | `genpass` | Generates a new vault password |
+| `backup` | Creates a backup of the vault password file in the current directory |
 | `help` | Shows help |
 
 ### Available Options
@@ -68,15 +69,19 @@ ansible-manager [command] [playbook]
 
 ## 🔒 Security
 
-- Vault password is stored in `~/.ssh/vault_pass`
-- Permissions are automatically adjusted
+- Vault passwords are stored in `~/.ans_vaults/` with unique files per project
+- Permissions are automatically adjusted (700 for directory, 600 for files)
 - Encryption is handled securely
+- Backup files are created with secure permissions (600)
+- ⚠️ **IMPORTANT**: Never commit backup files to version control
 
 ## 📝 Important Notes
 
 - The script must be run from the Ansible project root directory
 - Vault and inventory files must be present
 - The script automatically handles encryption/decryption when needed
+- Backup files should be deleted after use or stored securely
+- Backup files are named with the project's unique ID for easy identification
 
 ## 🤝 Contributing
 
