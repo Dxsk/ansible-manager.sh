@@ -58,6 +58,14 @@ ansible-manager [command] [playbook]
 | `genpass` | Generates a new vault password |
 | `help` | Shows help |
 
+### Available Options
+
+| Option | Description |
+|--------|-------------|
+| `--check` | Run in check mode (dry-run) |
+| `--diff` | Show differences when files are changed |
+| `--limit "pattern"` | Limit execution to specific hosts or groups |
+
 ## 🔒 Security
 
 - Vault password is stored in `~/.ssh/vault_pass`
