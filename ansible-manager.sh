@@ -3,7 +3,7 @@
 # 
 #         FILE: ansible-manager.sh
 #
-#        USAGE: ./ansible-manager.sh [command] [playbook]
+#        USAGE: ./ansible-manager.sh [command] [playbook] [options]
 #
 #  DESCRIPTION: Ansible management script to automate common operations
 #               with vault, playbooks and inventory.
@@ -141,7 +141,7 @@ is_vault_encrypted() {
 
 show_help() {
     cat <<EOF
-${YELLOW}Usage: $SCRIPT_NAME [command] [playbook]${NC}
+Usage: $SCRIPT_NAME [command] [playbook] [options]
 
 Commands:
   encrypt    - Encrypt the vault file
@@ -154,6 +154,11 @@ Commands:
   status     - Show vault status
   genpass    - Generate/regenerate vault password file
   help       - Show this help
+
+Options:
+  --check    - Run in check mode (dry-run) with run or secure-run commands
+  --diff     - Show differences when files are changed
+  --limit    - Limit execution to specific hosts or groups (e.g., "webservers" or "host1,host2")
 EOF
 }
 
@@ -190,17 +195,93 @@ handle_view() {
 
 handle_run() {
     local playbook="$1"
+    local check_mode=false
+    local diff_mode=false
+    local limit_pattern=""
+    local ansible_args=()
+    
+    # Parse options
+    shift
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --check)
+                check_mode=true
+                ansible_args+=("--check")
+                shift
+                ;;
+            --diff)
+                diff_mode=true
+                ansible_args+=("--diff")
+                shift
+                ;;
+            --limit)
+                if [[ -z "${2-}" ]]; then
+                    die "Error: --limit requires a pattern"
+                fi
+                limit_pattern="$2"
+                ansible_args+=("--limit" "$2")
+                shift 2
+                ;;
+            *)
+                die "Unknown option: $1"
+                ;;
+        esac
+    done
+    
     check_vault_file
     check_vault_pass
     check_inventory_file
+    
     log_info "Running playbook $playbook..."
-    ansible-playbook -i "$INVENTORY_FILE" "$playbook"
+    if [[ "$check_mode" == true ]]; then
+        log_info "Running in check mode (dry-run)..."
+    fi
+    if [[ "$diff_mode" == true ]]; then
+        log_info "Showing differences..."
+    fi
+    if [[ -n "$limit_pattern" ]]; then
+        log_info "Limiting to: $limit_pattern"
+    fi
+    
+    ansible-playbook -i "$INVENTORY_FILE" "${ansible_args[@]}" "$playbook"
 }
 
 handle_secure_run() {
     local playbook="$1"
+    local check_mode=false
+    local diff_mode=false
+    local limit_pattern=""
     local was_encrypted=false
     local playbook_status
+    local ansible_args=()
+    
+    # Parse options
+    shift
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --check)
+                check_mode=true
+                ansible_args+=("--check")
+                shift
+                ;;
+            --diff)
+                diff_mode=true
+                ansible_args+=("--diff")
+                shift
+                ;;
+            --limit)
+                if [[ -z "${2-}" ]]; then
+                    die "Error: --limit requires a pattern"
+                fi
+                limit_pattern="$2"
+                ansible_args+=("--limit" "$2")
+                shift 2
+                ;;
+            *)
+                die "Unknown option: $1"
+                ;;
+        esac
+    done
     
     check_vault_file
     check_vault_pass
@@ -213,7 +294,17 @@ handle_secure_run() {
     fi
 
     log_info "Running playbook $playbook..."
-    if ! ansible-playbook -i "$INVENTORY_FILE" "$playbook"; then
+    if [[ "$check_mode" == true ]]; then
+        log_info "Running in check mode (dry-run)..."
+    fi
+    if [[ "$diff_mode" == true ]]; then
+        log_info "Showing differences..."
+    fi
+    if [[ -n "$limit_pattern" ]]; then
+        log_info "Limiting to: $limit_pattern"
+    fi
+
+    if ! ansible-playbook -i "$INVENTORY_FILE" "${ansible_args[@]}" "$playbook"; then
         playbook_status=${E_ERROR}
     else
         playbook_status=${E_SUCCESS}
@@ -285,13 +376,13 @@ main() {
             if [[ -z "${2-}" ]]; then
                 die "Error: Playbook name missing"
             fi
-            handle_run "$2"
+            handle_run "$2" "${@:3}"
             ;;
         secure-run)
             if [[ -z "${2-}" ]]; then
                 die "Error: Playbook name missing"
             fi
-            handle_secure_run "$2"
+            handle_secure_run "$2" "${@:3}"
             ;;
         ping)        handle_ping ;;
         status)      handle_status ;;
