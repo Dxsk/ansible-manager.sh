@@ -1,6 +1,6 @@
 # Ansible Manager
 
-![Version](https://img.shields.io/badge/version-1.0-blue)
+![Version](https://img.shields.io/badge/version-1.1-blue)
 ![Shell](https://img.shields.io/badge/shell-bash-green)
 
 A utility script to simplify the management of your Ansible projects. Designed for humans who want to automate without the headache.
