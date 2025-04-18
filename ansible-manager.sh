@@ -52,7 +52,7 @@ readonly NC='\033[0m'
 
 # File paths
 readonly VAULT_FILE="group_vars/proxmox/vault.yml"
-readonly VAULT_PASS_FILE="$HOME/.ssh/vault_pass"
+readonly VAULT_DIR="$HOME/.ans_vaults"
 readonly INVENTORY_FILE="inventory.yml"
 
 # Required commands
@@ -61,6 +61,7 @@ readonly REQUIRED_COMMANDS=(
     "ansible-vault"
     "ansible-playbook"
     "openssl"
+    "sha256sum"
 )
 
 ###################
@@ -108,16 +109,40 @@ check_dependencies() {
     fi
 }
 
-###################
-# Core functions
-###################
+init_vault_dir() {
+    if [[ ! -d "$VAULT_DIR" ]]; then
+        log_info "Creating vault directory at $VAULT_DIR..."
+        mkdir -p "$VAULT_DIR"
+        chmod 700 "$VAULT_DIR"
+        log_info "Vault directory created with secure permissions"
+    else
+        # Ensure permissions are correct even if directory exists
+        chmod 700 "$VAULT_DIR" 2>/dev/null || log_warn "Could not update permissions on existing vault directory"
+    fi
+}
+
+generate_vault_id() {
+    local current_dir
+    current_dir=$(pwd)
+    echo "$current_dir" | sha256sum | cut -c1-30
+}
+
+get_vault_pass_file() {
+    local vault_id
+    vault_id=$(generate_vault_id)
+    echo "$VAULT_DIR/$vault_id"
+}
+
 generate_vault_pass() {
+    local vault_pass_file
+    vault_pass_file=$(get_vault_pass_file)
+    
     log_info "Generating new vault password..."
-    if ! openssl rand -base64 32 > "$VAULT_PASS_FILE"; then
+    if ! openssl rand -base64 32 > "$vault_pass_file"; then
         die "Failed to generate vault password"
     fi
-    chmod 600 "$VAULT_PASS_FILE" || die "Failed to set permissions on vault password file"
-    log_info "New vault password generated at $VAULT_PASS_FILE"
+    chmod 600 "$vault_pass_file" || die "Failed to set permissions on vault password file"
+    log_info "New vault password generated at $vault_pass_file"
 }
 
 check_vault_file() {
@@ -125,8 +150,11 @@ check_vault_file() {
 }
 
 check_vault_pass() {
-    if [[ ! -f "$VAULT_PASS_FILE" ]]; then
-        log_warn "Password file $VAULT_PASS_FILE does not exist, generating it..."
+    local vault_pass_file
+    vault_pass_file=$(get_vault_pass_file)
+    
+    if [[ ! -f "$vault_pass_file" ]]; then
+        log_warn "Password file $vault_pass_file does not exist, generating it..."
         generate_vault_pass
     fi
 }
@@ -153,6 +181,7 @@ Commands:
   ping       - Test connectivity with all inventory machines
   status     - Show vault status
   genpass    - Generate/regenerate vault password file
+  backup     - Backup the vault password file to current directory
   help       - Show this help
 
 Options:
@@ -169,28 +198,28 @@ handle_encrypt() {
     check_vault_file
     check_vault_pass
     log_info "Encrypting vault file..."
-    ansible-vault encrypt "$VAULT_FILE"
+    ansible-vault encrypt "$VAULT_FILE" --vault-password-file "$(get_vault_pass_file)"
 }
 
 handle_decrypt() {
     check_vault_file
     check_vault_pass
     log_info "Decrypting vault file..."
-    ansible-vault decrypt "$VAULT_FILE"
+    ansible-vault decrypt "$VAULT_FILE" --vault-password-file "$(get_vault_pass_file)"
 }
 
 handle_edit() {
     check_vault_file
     check_vault_pass
     log_info "Editing vault file..."
-    ansible-vault edit "$VAULT_FILE"
+    ansible-vault edit "$VAULT_FILE" --vault-password-file "$(get_vault_pass_file)"
 }
 
 handle_view() {
     check_vault_file
     check_vault_pass
     log_info "Viewing vault content..."
-    ansible-vault view "$VAULT_FILE"
+    ansible-vault view "$VAULT_FILE" --vault-password-file "$(get_vault_pass_file)"
 }
 
 handle_run() {
@@ -243,7 +272,7 @@ handle_run() {
         log_info "Limiting to: $limit_pattern"
     fi
     
-    ansible-playbook -i "$INVENTORY_FILE" "${ansible_args[@]}" "$playbook"
+    ansible-playbook -i "$INVENTORY_FILE" --vault-password-file "$(get_vault_pass_file)" "${ansible_args[@]}" "$playbook"
 }
 
 handle_secure_run() {
@@ -290,7 +319,7 @@ handle_secure_run() {
     if is_vault_encrypted; then
         was_encrypted=true
         log_warn "Vault is encrypted, temporary decryption..."
-        ansible-vault decrypt "$VAULT_FILE"
+        ansible-vault decrypt "$VAULT_FILE" --vault-password-file "$(get_vault_pass_file)"
     fi
 
     log_info "Running playbook $playbook..."
@@ -304,7 +333,7 @@ handle_secure_run() {
         log_info "Limiting to: $limit_pattern"
     fi
 
-    if ! ansible-playbook -i "$INVENTORY_FILE" "${ansible_args[@]}" "$playbook"; then
+    if ! ansible-playbook -i "$INVENTORY_FILE" --vault-password-file "$(get_vault_pass_file)" "${ansible_args[@]}" "$playbook"; then
         playbook_status=${E_ERROR}
     else
         playbook_status=${E_SUCCESS}
@@ -312,7 +341,7 @@ handle_secure_run() {
 
     if [[ "$was_encrypted" == true ]]; then
         log_warn "Re-encrypting vault..."
-        ansible-vault encrypt "$VAULT_FILE"
+        ansible-vault encrypt "$VAULT_FILE" --vault-password-file "$(get_vault_pass_file)"
     fi
 
     return ${playbook_status}
@@ -349,6 +378,37 @@ handle_status() {
     fi
 }
 
+handle_backup() {
+    local vault_pass_file
+    local backup_file
+    vault_pass_file=$(get_vault_pass_file)
+    backup_file="vault_pass_$(generate_vault_id).backup"
+    
+    if [[ ! -f "$vault_pass_file" ]]; then
+        die "No vault password file found to backup"
+    fi
+    
+    log_warn "WARNING: This will create a backup of your vault password in the current directory."
+    log_warn "         Make sure to:"
+    log_warn "         1. Never commit this file to version control"
+    log_warn "         2. Delete it after use"
+    log_warn "         3. Store it securely if you need to keep it"
+    
+    read -p "Do you want to continue? (y/N) " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        log_info "Backup cancelled"
+        exit ${E_SUCCESS}
+    fi
+    
+    log_info "Creating backup of vault password file..."
+    cp "$vault_pass_file" "$backup_file"
+    chmod 600 "$backup_file"
+    
+    log_info "Backup created at: $backup_file"
+    log_warn "Remember to delete this file after use!"
+}
+
 ###################
 # Main
 ###################
@@ -356,6 +416,9 @@ main() {
     # Set up trap for cleanup
     trap cleanup EXIT
     trap 'die "Script interrupted"' INT TERM
+
+    # Initialize vault directory
+    init_vault_dir
 
     # Check dependencies
     check_dependencies
@@ -387,6 +450,7 @@ main() {
         ping)        handle_ping ;;
         status)      handle_status ;;
         genpass)     generate_vault_pass ;;
+        backup)      handle_backup ;;
         help)        show_help ;;
         *)
             log_error "Unknown command: $command"
