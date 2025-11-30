@@ -13,6 +13,7 @@ SCRIPT_NAME=""
 SCRIPT_NAME=$(basename "$0")
 readonly SCRIPT_NAME
 readonly SCRIPT_VERSION="2.0"
+readonly GITHUB_REPO="Dxsk/ansible-manager.sh"  # Format: owner/repo
 
 readonly E_SUCCESS=0
 readonly E_ERROR=1
@@ -305,6 +306,7 @@ ${YELLOW}Utility Commands:${NC}
   genpass         Generate/regenerate vault password file
   backup          Backup the vault password file
   completion      Generate bash completion script
+  check-update    Check for new versions on GitHub
   help            Show this help
   version         Show version information
 
@@ -343,6 +345,99 @@ EOF
 show_version() {
     echo -e "${GREEN}Ansible Manager${NC} v${SCRIPT_VERSION}"
     echo "Ansible version: $(ansible --version | head -1)"
+}
+
+# Compare semantic versions: returns 0 if $1 > $2, 1 otherwise
+version_gt() {
+    local v1="${1#v}"
+    local v2="${2#v}"
+
+    # Simple comparison for x.y.z format
+    local i
+    local v1_parts v2_parts
+    IFS='.' read -ra v1_parts <<< "$v1"
+    IFS='.' read -ra v2_parts <<< "$v2"
+
+    for ((i=0; i<${#v1_parts[@]}; i++)); do
+        local n1="${v1_parts[i]:-0}"
+        local n2="${v2_parts[i]:-0}"
+
+        # Remove non-numeric suffixes for comparison
+        n1="${n1%%[!0-9]*}"
+        n2="${n2%%[!0-9]*}"
+
+        ((n1 > n2)) && return 0
+        ((n1 < n2)) && return 1
+    done
+    return 1
+}
+
+# shellcheck disable=SC2120  # Arguments are optional (silent mode)
+check_update() {
+    local silent="${1:-false}"
+    local latest_version=""
+    local release_url=""
+    local api_url="https://api.github.com/repos/${GITHUB_REPO}/releases/latest"
+    local tags_url="https://api.github.com/repos/${GITHUB_REPO}/tags"
+
+    # Check if curl is available - silently skip if not
+    if ! command -v curl >/dev/null 2>&1; then
+        [[ "$silent" != "true" ]] && log_warn "curl is required for update checking"
+        return 0
+    fi
+
+    [[ "$silent" != "true" ]] && log_info "Checking for updates..."
+
+    # Try releases first (preferred) - short timeout to avoid blocking
+    local response
+    response=$(curl -sf --max-time 5 --connect-timeout 3 "$api_url" 2>/dev/null) && {
+        latest_version=$(echo "$response" | grep -oP '"tag_name":\s*"\K[^"]+' | head -1)
+        release_url=$(echo "$response" | grep -oP '"html_url":\s*"\K[^"]+' | head -1)
+    }
+
+    # Fallback to tags if no releases found
+    if [[ -z "$latest_version" ]]; then
+        response=$(curl -sf --max-time 5 --connect-timeout 3 "$tags_url" 2>/dev/null) && {
+            latest_version=$(echo "$response" | grep -oP '"name":\s*"\K[^"]+' | head -1)
+            release_url="https://github.com/${GITHUB_REPO}/releases/tag/${latest_version}"
+        }
+    fi
+
+    # Silently fail if we can't reach GitHub - don't block the user
+    if [[ -z "$latest_version" ]]; then
+        [[ "$silent" != "true" ]] && log_warn "Could not fetch version information from GitHub"
+        return 0
+    fi
+
+    # Normalize versions for comparison (strip 'v' prefix if present)
+    local current_clean="${SCRIPT_VERSION#v}"
+    local latest_clean="${latest_version#v}"
+
+    if [[ "$silent" == "true" ]]; then
+        # Silent mode: only show a short notice if update available
+        if version_gt "$latest_clean" "$current_clean"; then
+            echo -e "${YELLOW}[UPDATE]${NC} v${latest_version} available - run '$SCRIPT_NAME check-update' for details" >&2
+        fi
+    else
+        # Verbose mode: show full info
+        echo -e "${CYAN}Update Check:${NC}"
+        echo "  Current version: v${current_clean}"
+        echo "  Latest version:  ${latest_version}"
+
+        if version_gt "$latest_clean" "$current_clean"; then
+            echo
+            echo -e "  ${YELLOW}Update available!${NC}"
+            echo -e "  ${GREEN}→${NC} Download: ${release_url}"
+            echo
+            echo -e "  To update, run:"
+            echo -e "    curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPO}/main/ansible-manager.sh -o ansible-manager.sh"
+        else
+            echo
+            echo -e "  ${GREEN}You are running the latest version${NC}"
+        fi
+    fi
+
+    return 0
 }
 
 ###############################################################################
@@ -956,7 +1051,7 @@ _ansible_manager_completions() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    commands="encrypt decrypt edit view rekey run secure-run retry ping status genpass backup syntax-check list galaxy lint inventory facts encrypt-string diff ssh-check init completion help version"
+    commands="encrypt decrypt edit view rekey run secure-run retry ping status genpass backup syntax-check list galaxy lint inventory facts encrypt-string diff ssh-check init completion check-update help version"
 
     case "$prev" in
         ansible-manager)
@@ -1170,6 +1265,9 @@ main() {
             ;;
         completion)
             handle_completion
+            ;;
+        check-update|update)
+            check_update
             ;;
         help|--help|-h)
             show_help
