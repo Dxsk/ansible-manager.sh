@@ -1144,6 +1144,14 @@ main() {
     local command="$1"
     shift
 
+    # Silent update check - runs in background, never blocks
+    # Skip for help/version/completion commands to avoid noise
+    if [[ "$command" != "help" && "$command" != "--help" && "$command" != "-h" \
+       && "$command" != "version" && "$command" != "--version" \
+       && "$command" != "completion" && "$command" != "check-update" && "$command" != "update" ]]; then
+        check_update "true" &
+    fi
+
     case "$command" in
         encrypt)
             local vault_target="$VAULT_FILE"
