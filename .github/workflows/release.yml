@@ -15,6 +15,27 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: main
+
+      - name: Get version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Update version badge in README
+        run: |
+          sed -i "s/version-[0-9.]*-blue/version-${{ steps.version.outputs.VERSION }}-blue/" readme.md
+
+      - name: Update script version
+        run: |
+          sed -i "s/SCRIPT_VERSION=\"[0-9.]*\"/SCRIPT_VERSION=\"${{ steps.version.outputs.VERSION }}\"/" ansible-manager.sh
+
+      - name: Commit version updates
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add readme.md ansible-manager.sh
+          git diff --staged --quiet || git commit -m "chore: bump version to ${{ steps.version.outputs.VERSION }}"
+          git push origin main
 
       - name: Generate changelog
         uses: orhun/git-cliff-action@v3
