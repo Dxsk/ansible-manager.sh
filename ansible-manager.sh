@@ -12,7 +12,7 @@ IFS=$'\n\t'
 SCRIPT_NAME=""
 SCRIPT_NAME=$(basename "$0")
 readonly SCRIPT_NAME
-readonly SCRIPT_VERSION="2.0"
+readonly SCRIPT_VERSION="2.0.0"
 readonly GITHUB_REPO="Dxsk/ansible-manager.sh"  # Format: owner/repo
 
 readonly E_SUCCESS=0
