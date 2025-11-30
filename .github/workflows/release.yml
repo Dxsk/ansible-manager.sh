@@ -39,8 +39,9 @@ jobs:
 
       - name: Install git-cliff
         run: |
-          curl -sSfL https://github.com/orhun/git-cliff/releases/latest/download/git-cliff-x86_64-unknown-linux-gnu.tar.gz | tar xz
-          sudo mv git-cliff /usr/local/bin/
+          VERSION=$(curl -s https://api.github.com/repos/orhun/git-cliff/releases/latest | grep -oP '"tag_name":\s*"\K[^"]+')
+          curl -sSfL "https://github.com/orhun/git-cliff/releases/download/${VERSION}/git-cliff-${VERSION#v}-x86_64-unknown-linux-gnu.tar.gz" | tar xz
+          sudo mv git-cliff-${VERSION#v}/git-cliff /usr/local/bin/
 
       - name: Generate changelog
         run: git-cliff --latest --strip header -o CHANGELOG.md
