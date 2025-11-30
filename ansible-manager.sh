@@ -106,7 +106,9 @@ cleanup() {
     if (( ${#TEMP_FILES[@]} > 0 )); then
         log_debug "Cleaning up ${#TEMP_FILES[@]} temporary files..."
         for tmp_file in "${TEMP_FILES[@]}"; do
-            [[ -f "$tmp_file" ]] && rm -f "$tmp_file" 2>/dev/null || true
+            if [[ -f "$tmp_file" ]]; then
+                rm -f "$tmp_file" 2>/dev/null || true
+            fi
         done
     fi
 
@@ -839,13 +841,11 @@ handle_retry() {
 
     ansible_args+=("--limit" "@$retry_file")
 
-    ansible-playbook -i "$INVENTORY_FILE" \
+    # Clean up retry file on success
+    if ansible-playbook -i "$INVENTORY_FILE" \
         --vault-password-file "$(get_vault_pass_file)" \
         "${ansible_args[@]}" \
-        "$playbook"
-
-    # Clean up retry file on success
-    if [[ $? -eq 0 ]]; then
+        "$playbook"; then
         rm -f "$retry_file"
         log_info "Retry successful, removed $retry_file"
     fi
@@ -1036,7 +1036,7 @@ handle_ssh_check() {
         ansible-vault encrypt "$VAULT_FILE" --vault-password-file "$(get_vault_pass_file)"
     fi
 
-    return $ssh_status
+    return "$ssh_status"
 }
 
 handle_completion() {
